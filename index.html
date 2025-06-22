@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Effect Brush Demo</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Image Effect Brush Demo</h1>
+            <p>Upload an image and apply effects using the brush tool</p>
+        </header>
+
+        <main>
+            <div class="upload-section">
+                <input type="file" id="imageUpload" accept="image/*" style="display: none;">
+                <button id="uploadBtn" class="btn-primary">Upload Image</button>
+                <div id="imageInfo" class="image-info"></div>
+            </div>
+
+            <div class="tools-section">
+                <div class="tool-group">
+                    <label for="brushSize">Brush Size:</label>
+                    <input type="range" id="brushSize" min="1" max="50" value="10">
+                    <span id="brushSizeValue">10</span>px
+                </div>
+                
+                <div class="tool-group">
+                    <label for="brushColor">Brush Color:</label>
+                    <input type="color" id="brushColor" value="#ff0000">
+                </div>
+                
+                <div class="tool-group">
+                    <label for="brushOpacity">Opacity:</label>
+                    <input type="range" id="brushOpacity" min="0.1" max="1" step="0.1" value="0.8">
+                    <span id="brushOpacityValue">0.8</span>
+                </div>
+                
+                <div class="tool-group">
+                    <button id="clearCanvas" class="btn-secondary">Clear Drawing</button>
+                    <button id="downloadResult" class="btn-primary">Download Result</button>
+                </div>
+            </div>
+
+            <div class="canvas-container" id="canvasContainer">
+                <div class="placeholder">
+                    <p>Upload an image to start drawing</p>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html> 
