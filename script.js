@@ -7,6 +7,8 @@ class ImageBrushApp {
         this.lastX = 0;
         this.lastY = 0;
         
+        this.baseVal = 1; // uniform base weight per pixel
+        
         this.initializeElements();
         this.setupEventListeners();
         this.updateToolValues();
@@ -113,9 +115,9 @@ class ImageBrushApp {
         this.heatmapCanvas.style.height = displayHeight + 'px';
         this.heatCtx = this.heatmapCanvas.getContext('2d');
 
-        // Initialize attention data array
+        // Initialize paintAccum array
         const totalPix = displayWidth*displayHeight;
-        this.attentionData = new Float32Array(totalPix).fill(1/totalPix);
+        this.paintAccum = new Float32Array(totalPix).fill(0);
         this.renderHeatmap();
 
         // Drawing canvas (overlay)
@@ -189,7 +191,7 @@ class ImageBrushApp {
         const currentX = e.clientX - rect.left;
         const currentY = e.clientY - rect.top;
 
-        // keep canvas blank; we only update attention distribution
+        // keep canvas blank; we only update paintAccum
         this.ctx.clearRect(0,0,this.canvas.width,this.canvas.height);
 
         this.addAttention(currentX, currentY);
@@ -261,7 +263,7 @@ class ImageBrushApp {
         const twoSigma2 = 2*sigma*sigma;
         const width = this.heatmapCanvas.width;
         const height = this.heatmapCanvas.height;
-        const boost = 4; // how strongly a stroke pulls probability mass
+        const strokeStrength = 5; // additive weight per stroke
 
         for(let dy=-radius; dy<=radius; dy++){
             const yIdx = Math.round(y+dy);
@@ -271,17 +273,11 @@ class ImageBrushApp {
                 if(xIdx<0 || xIdx>=width) continue;
                 const dist2 = dx*dx + dy*dy;
                 if(dist2 > radius*radius) continue;
-                const weight = Math.exp(-dist2 / twoSigma2); // 0..1 gaussian
+                const weight = Math.exp(-dist2 / twoSigma2); // gaussian falloff
                 const idx = yIdx*width + xIdx;
-                this.attentionData[idx] *= (1 + boost*weight);
+                this.paintAccum[idx] += strokeStrength * weight;
             }
         }
-
-        // Renormalise so Σ = 1
-        let sum = 0;
-        for(let v of this.attentionData) sum += v;
-        const invSum = 1 / sum;
-        for(let k=0;k<this.attentionData.length;k++) this.attentionData[k] *= invSum;
     }
 
     renderHeatmap(){
@@ -289,16 +285,21 @@ class ImageBrushApp {
         const height = this.heatmapCanvas.height;
         const imgData = this.heatCtx.createImageData(width,height);
 
-        // logarithmic scale to amplify contrast
         let minP = Infinity, maxP = 0;
-        for(let p of this.attentionData){ if(p<minP) minP=p; if(p>maxP) maxP=p; }
+        const combined = new Float32Array(this.paintAccum.length);
+        for(let i=0;i<combined.length;i++){
+            const p = this.baseVal + this.paintAccum[i];
+            combined[i]=p;
+            if(p<minP) minP=p;
+            if(p>maxP) maxP=p;
+        }
         const uniformMode = (maxP - minP) < 1e-12;
         const logMax = Math.log10(maxP + 1e-12);
         const logMin = Math.log10(minP + 1e-12);
         const logRange = logMax - logMin || 1e-8;
 
-        for(let i=0;i<this.attentionData.length;i++){
-            const p = this.attentionData[i];
+        for(let i=0;i<combined.length;i++){
+            const p = combined[i];
             let v;
             if(uniformMode){
                 v = 0.5; // mid colour when everything equal
@@ -318,7 +319,13 @@ class ImageBrushApp {
         if(!this.bgCanvas || !this.heatmapCanvas) return;
         const bgCtx = this.bgCtx;
         const originalImgData = bgCtx.getImageData(0,0,this.bgCanvas.width,this.bgCanvas.height);
-        const probCopy = new Float32Array(this.attentionData); // clone current attention probabilities
+        const width = this.bgCanvas.width;
+        const height = this.bgCanvas.height;
+        const N = width*height;
+        const probCopy = new Float32Array(this.paintAccum.length);
+        for(let i=0;i<probCopy.length;i++) probCopy[i] = this.baseVal + this.paintAccum[i];
+        // normalise
+        let total = 0; for(let v of probCopy) total += v; const invTotal = 1/total; for(let i=0;i<probCopy.length;i++) probCopy[i]*=invTotal;
         const strength = this.fixedWarpStrength;
         const warped = warpFromProbSync(originalImgData, probCopy, strength);
         // Display result
