@@ -63,31 +63,48 @@ class ImageBrushApp {
         // Clear container
         this.canvasContainer.innerHTML = '';
 
+        // Determine maximum display size (keep within container and viewport)
+        const containerWidth = this.canvasContainer.clientWidth || window.innerWidth * 0.9;
+        const containerHeight = window.innerHeight * 0.7; // 70% of viewport height
+
+        // Calculate scaling ratio while preserving aspect ratio
+        const widthRatio = containerWidth / img.width;
+        const heightRatio = containerHeight / img.height;
+        const ratio = Math.min(widthRatio, heightRatio, 1); // never upscale
+
+        const displayWidth = Math.round(img.width * ratio);
+        const displayHeight = Math.round(img.height * ratio);
+
         // Create canvas wrapper
         const wrapper = document.createElement('div');
         wrapper.className = 'canvas-wrapper';
+        // Explicitly set wrapper dimensions so flexbox can center it
+        wrapper.style.width = displayWidth + 'px';
+        wrapper.style.height = displayHeight + 'px';
 
-        // Create background canvas for the image
+        // Background canvas (for the uploaded image)
         const bgCanvas = document.createElement('canvas');
         bgCanvas.className = 'background-image';
-        bgCanvas.width = img.width;
-        bgCanvas.height = img.height;
-        
-        const bgCtx = bgCanvas.getContext('2d');
-        bgCtx.drawImage(img, 0, 0);
+        bgCanvas.width = displayWidth;
+        bgCanvas.height = displayHeight;
+        bgCanvas.style.width = displayWidth + 'px';
+        bgCanvas.style.height = displayHeight + 'px';
 
-        // Create drawing canvas
+        const bgCtx = bgCanvas.getContext('2d');
+        bgCtx.drawImage(img, 0, 0, displayWidth, displayHeight);
+
+        // Drawing canvas (overlay)
         this.canvas = document.createElement('canvas');
         this.canvas.className = 'drawing-canvas';
-        this.canvas.width = img.width;
-        this.canvas.height = img.height;
+        this.canvas.width = displayWidth;
+        this.canvas.height = displayHeight;
+        this.canvas.style.width = displayWidth + 'px';
+        this.canvas.style.height = displayHeight + 'px';
         this.ctx = this.canvas.getContext('2d');
-
-        // Set canvas properties
         this.ctx.lineCap = 'round';
         this.ctx.lineJoin = 'round';
 
-        // Add both canvases to wrapper
+        // Append canvases
         wrapper.appendChild(bgCanvas);
         wrapper.appendChild(this.canvas);
         this.canvasContainer.appendChild(wrapper);
@@ -183,19 +200,18 @@ class ImageBrushApp {
             return;
         }
 
-        // Create a temporary canvas to combine both layers
+        // Create a temporary canvas matching the DISPLAY resolution
         const tempCanvas = document.createElement('canvas');
         tempCanvas.width = this.canvas.width;
         tempCanvas.height = this.canvas.height;
         const tempCtx = tempCanvas.getContext('2d');
 
-        // Draw background image first
-        tempCtx.drawImage(this.backgroundImage, 0, 0);
-        
-        // Draw the drawing layer on top
+        // Draw the scaled background image
+        tempCtx.drawImage(this.backgroundImage, 0, 0, tempCanvas.width, tempCanvas.height);
+        // Draw the drawing layer
         tempCtx.drawImage(this.canvas, 0, 0);
 
-        // Create download link
+        // Download link
         const link = document.createElement('a');
         link.download = 'edited-image.png';
         link.href = tempCanvas.toDataURL();
