@@ -75,7 +75,7 @@ main {
     display: flex;
     align-items: center;
     gap: 10px;
-    min-width: 180px;
+    min-width: 120px;
 }
 
 .tool-group label {
@@ -176,9 +176,12 @@ main {
     background: #ffffff;
     min-height: 400px;
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     justify-content: center;
-    overflow: hidden;
+    gap: 20px;
+    overflow: auto;
+    padding: 10px;
 }
 
 .placeholder {
@@ -205,6 +208,7 @@ main {
 .canvas-wrapper {
     position: relative;
     display: inline-block;
+    margin: 10px;
 }
 
 .background-image {
