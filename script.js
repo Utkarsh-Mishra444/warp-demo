@@ -24,6 +24,11 @@ class ImageBrushApp {
         this.brushOpacityValue = document.getElementById('brushOpacityValue');
         this.clearCanvas = document.getElementById('clearCanvas');
         this.downloadResult = document.getElementById('downloadResult');
+        // New elements for warp / heatmap
+        this.warpStrength = document.getElementById('warpStrength');
+        this.warpStrengthValue = document.getElementById('warpStrengthValue');
+        this.applyWarp = document.getElementById('applyWarp');
+        this.toggleHeatmap = document.getElementById('toggleHeatmap');
     }
 
     setupEventListeners() {
@@ -36,6 +41,10 @@ class ImageBrushApp {
         this.brushOpacity.addEventListener('input', (e) => this.updateBrushOpacity(e));
         this.clearCanvas.addEventListener('click', () => this.clearDrawing());
         this.downloadResult.addEventListener('click', () => this.downloadImage());
+        // New listeners
+        this.warpStrength.addEventListener('input', (e)=> this.updateWarpStrength(e));
+        this.applyWarp.addEventListener('click', ()=> this.runWarp());
+        this.toggleHeatmap.addEventListener('change', ()=> this.updateHeatmapVisibility());
     }
 
     handleImageUpload(event) {
@@ -93,6 +102,19 @@ class ImageBrushApp {
         const bgCtx = bgCanvas.getContext('2d');
         bgCtx.drawImage(img, 0, 0, displayWidth, displayHeight);
 
+        // Save references for later warp processing
+        this.bgCanvas = bgCanvas;
+        this.bgCtx = bgCtx;
+
+        // Heatmap canvas (visual + data)
+        this.heatmapCanvas = document.createElement('canvas');
+        this.heatmapCanvas.className = 'heatmap-canvas';
+        this.heatmapCanvas.width = displayWidth;
+        this.heatmapCanvas.height = displayHeight;
+        this.heatmapCanvas.style.width = displayWidth + 'px';
+        this.heatmapCanvas.style.height = displayHeight + 'px';
+        this.heatCtx = this.heatmapCanvas.getContext('2d');
+
         // Drawing canvas (overlay)
         this.canvas = document.createElement('canvas');
         this.canvas.className = 'drawing-canvas';
@@ -106,11 +128,13 @@ class ImageBrushApp {
 
         // Append canvases
         wrapper.appendChild(bgCanvas);
+        wrapper.appendChild(this.heatmapCanvas);
         wrapper.appendChild(this.canvas);
         this.canvasContainer.appendChild(wrapper);
 
         // Setup drawing events
         this.setupDrawingEvents();
+        this.updateHeatmapVisibility();
     }
 
     setupDrawingEvents() {
@@ -172,6 +196,14 @@ class ImageBrushApp {
         this.ctx.lineTo(currentX, currentY);
         this.ctx.stroke();
 
+        // also draw to heatmap
+        if(this.heatCtx){
+            this.heatCtx.fillStyle = 'rgba(255,0,0,0.2)';
+            this.heatCtx.beginPath();
+            this.heatCtx.arc(currentX, currentY, this.brushSize.value/2, 0, Math.PI*2);
+            this.heatCtx.fill();
+        }
+
         this.lastX = currentX;
         this.lastY = currentY;
     }
@@ -230,9 +262,133 @@ class ImageBrushApp {
         this.brushSizeValue.textContent = this.brushSize.value;
         this.brushOpacityValue.textContent = this.brushOpacity.value;
     }
+
+    updateWarpStrength(e){
+        this.warpStrengthValue.textContent = e.target.value;
+    }
+
+    updateHeatmapVisibility(){
+        if(this.heatmapCanvas){
+            this.heatmapCanvas.style.display = this.toggleHeatmap.checked ? 'block' : 'none';
+        }
+    }
+
+    runWarp(){
+        if(!this.bgCanvas || !this.heatmapCanvas) return;
+        const bgCtx = this.bgCtx;
+        const originalImgData = bgCtx.getImageData(0,0,this.bgCanvas.width,this.bgCanvas.height);
+        const attentionData = this.heatCtx.getImageData(0,0,this.heatmapCanvas.width,this.heatmapCanvas.height);
+        const strength = parseFloat(this.warpStrength.value);
+        warpImageProcessor(originalImgData, attentionData, strength).then((warped)=>{
+            bgCtx.putImageData(warped,0,0);
+            // clear drawing & heatmap
+            this.ctx.clearRect(0,0,this.canvas.width,this.canvas.height);
+            this.heatCtx.clearRect(0,0,this.heatmapCanvas.width,this.heatmapCanvas.height);
+        });
+    }
 }
 
 // Initialize the app when the DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
     new ImageBrushApp();
-}); 
+});
+
+// Add warpImageProcessor util (axis aligned strip warp) minimal version
+function warpImageProcessor(originalImageData, attentionMapImageData, warpStrengthFactor){
+    return new Promise((resolve)=>{
+        const width = originalImageData.width;
+        const height = originalImageData.height;
+        const warpedImageData = new ImageData(width,height);
+        const epsilon=1e-6;
+        // Build attention probability distribution from alpha channel
+        const attentionProbDist = new Float32Array(width*height);
+        let totalAttention=0;
+        for(let y=0;y<height;y++){
+            for(let x=0;x<width;x++){
+                const alpha = attentionMapImageData.data[(y*width+x)*4+3]/255.0;
+                attentionProbDist[y*width+x]=alpha;
+                totalAttention+=alpha;
+            }
+        }
+        if(totalAttention<epsilon){ // uniform if no attention
+            const uniform=1.0/(width*height);
+            attentionProbDist.fill(uniform);
+        }else{
+            for(let i=0;i<attentionProbDist.length;i++){
+                attentionProbDist[i]/=totalAttention;
+            }
+        }
+        // Compute PMF X & Y
+        const pmfX=new Float32Array(width).fill(0);
+        const pmfY=new Float32Array(height).fill(0);
+        for(let y=0;y<height;y++){
+            for(let x=0;x<width;x++){
+                const p = attentionProbDist[y*width+x];
+                pmfX[x]+=p;
+                pmfY[y]+=p;
+            }
+        }
+        // Blend with uniform
+        for(let x=0;x<width;x++) pmfX[x]=(1-warpStrengthFactor)*(1/width)+warpStrengthFactor*pmfX[x];
+        for(let y=0;y<height;y++) pmfY[y]=(1-warpStrengthFactor)*(1/height)+warpStrengthFactor*pmfY[y];
+        // Normalize
+        let sumX=pmfX.reduce((a,b)=>a+b,0);
+        for(let x=0;x<width;x++) pmfX[x]/=sumX;
+        let sumY=pmfY.reduce((a,b)=>a+b,0);
+        for(let y=0;y<height;y++) pmfY[y]/=sumY;
+        // Build CDFs
+        const cdfX=new Float32Array(width);
+        const cdfY=new Float32Array(height);
+        cdfX[0]=pmfX[0];
+        for(let x=1;x<width;x++) cdfX[x]=cdfX[x-1]+pmfX[x];
+        cdfY[0]=pmfY[0];
+        for(let y=1;y<height;y++) cdfY[y]=cdfY[y-1]+pmfY[y];
+        cdfX[width-1]=1.0; cdfY[height-1]=1.0;
+        // Helper inverse CDF function
+        function inverseCDF(val, cdfArray){
+            for(let i=0;i<cdfArray.length-1;i++){
+                if(val<=cdfArray[i]) return i;
+                if(val<cdfArray[i+1]){
+                    const diff = cdfArray[i+1]-cdfArray[i];
+                    if(diff<epsilon) return i;
+                    const frac=(val-cdfArray[i])/diff;
+                    return i+frac;
+                }
+            }
+            return cdfArray.length-1;
+        }
+        // Bilinear interpolate function
+        function bilinear(imageData,x,y){
+            const x0=Math.floor(x), x1=Math.min(Math.ceil(x),width-1);
+            const y0=Math.floor(y), y1=Math.min(Math.ceil(y),height-1);
+            const xd=x-x0, yd=y-y0;
+            function get(ix,iy){
+                const i=(iy*width+ix)*4;return [imageData.data[i],imageData.data[i+1],imageData.data[i+2],imageData.data[i+3]];
+            }
+            const c00=get(x0,y0), c10=get(x1,y0), c01=get(x0,y1), c11=get(x1,y1);
+            const out=[0,0,0,0];
+            for(let k=0;k<4;k++){
+                const top=c00[k]*(1-xd)+c10[k]*xd;
+                const bottom=c01[k]*(1-xd)+c11[k]*xd;
+                out[k]=top*(1-yd)+bottom*yd;
+            }
+            return out;
+        }
+        // Now warp
+        for(let ty=0;ty<height;ty++){
+            const normY= height<=1?0.5:ty/(height-1);
+            const sy=inverseCDF(normY,cdfY);
+            for(let tx=0;tx<width;tx++){
+                const normX= width<=1?0.5:tx/(width-1);
+                const sx=inverseCDF(normX,cdfX);
+                const color=bilinear(originalImageData,sx,sy);
+                const idx=(ty*width+tx)*4;
+                warpedImageData.data[idx]=color[0];
+                warpedImageData.data[idx+1]=color[1];
+                warpedImageData.data[idx+2]=color[2];
+                warpedImageData.data[idx+3]=color[3];
+            }
+        }
+        resolve(warpedImageData);
+    });
+} 
