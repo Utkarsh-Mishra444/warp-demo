@@ -19,7 +19,6 @@ class ImageBrushApp {
         this.canvasContainer = document.getElementById('canvasContainer');
         this.brushSize = document.getElementById('brushSize');
         this.brushSizeValue = document.getElementById('brushSizeValue');
-        this.brushColor = document.getElementById('brushColor');
         this.brushOpacity = null;
         this.brushOpacityValue = null;
         this.clearCanvas = document.getElementById('clearCanvas');
@@ -115,7 +114,8 @@ class ImageBrushApp {
         this.heatCtx = this.heatmapCanvas.getContext('2d');
 
         // Initialize attention data array
-        this.attentionData = new Float32Array(displayWidth * displayHeight).fill(0);
+        const totalPix = displayWidth*displayHeight;
+        this.attentionData = new Float32Array(totalPix).fill(1/totalPix);
         this.renderHeatmap();
 
         // Drawing canvas (overlay)
@@ -189,15 +189,8 @@ class ImageBrushApp {
         const currentX = e.clientX - rect.left;
         const currentY = e.clientY - rect.top;
 
-        this.ctx.globalCompositeOperation = 'source-over';
-        this.ctx.strokeStyle = this.brushColor.value;
-        this.ctx.lineWidth = this.brushSize.value;
-        this.ctx.globalAlpha = 1;
-
-        this.ctx.beginPath();
-        this.ctx.moveTo(this.lastX, this.lastY);
-        this.ctx.lineTo(currentX, currentY);
-        this.ctx.stroke();
+        // keep canvas blank; we only update attention distribution
+        this.ctx.clearRect(0,0,this.canvas.width,this.canvas.height);
 
         this.addAttention(currentX, currentY);
         this.renderHeatmap();
@@ -264,33 +257,59 @@ class ImageBrushApp {
 
     addAttention(x,y){
         const radius = this.brushSize.value/2;
+        const sigma = radius/2;
+        const twoSigma2 = 2*sigma*sigma;
         const width = this.heatmapCanvas.width;
         const height = this.heatmapCanvas.height;
+        const boost = 4; // how strongly a stroke pulls probability mass
+
         for(let dy=-radius; dy<=radius; dy++){
+            const yIdx = Math.round(y+dy);
+            if(yIdx<0 || yIdx>=height) continue;
             for(let dx=-radius; dx<=radius; dx++){
-                const ix = Math.round(x+dx);
-                const iy = Math.round(y+dy);
-                if(ix<0||iy<0||ix>=width||iy>=height) continue;
-                const dist = Math.sqrt(dx*dx+dy*dy);
-                if(dist<=radius){
-                    const idx = iy*width+ix;
-                    this.attentionData[idx] = Math.min(1, this.attentionData[idx]+0.05);
-                }
+                const xIdx = Math.round(x+dx);
+                if(xIdx<0 || xIdx>=width) continue;
+                const dist2 = dx*dx + dy*dy;
+                if(dist2 > radius*radius) continue;
+                const weight = Math.exp(-dist2 / twoSigma2); // 0..1 gaussian
+                const idx = yIdx*width + xIdx;
+                this.attentionData[idx] *= (1 + boost*weight);
             }
         }
+
+        // Renormalise so Σ = 1
+        let sum = 0;
+        for(let v of this.attentionData) sum += v;
+        const invSum = 1 / sum;
+        for(let k=0;k<this.attentionData.length;k++) this.attentionData[k] *= invSum;
     }
 
     renderHeatmap(){
         const width = this.heatmapCanvas.width;
         const height = this.heatmapCanvas.height;
         const imgData = this.heatCtx.createImageData(width,height);
+
+        // logarithmic scale to amplify contrast
+        let minP = Infinity, maxP = 0;
+        for(let p of this.attentionData){ if(p<minP) minP=p; if(p>maxP) maxP=p; }
+        const uniformMode = (maxP - minP) < 1e-12;
+        const logMax = Math.log10(maxP + 1e-12);
+        const logMin = Math.log10(minP + 1e-12);
+        const logRange = logMax - logMin || 1e-8;
+
         for(let i=0;i<this.attentionData.length;i++){
-            const v = this.attentionData[i]; // 0..1
+            const p = this.attentionData[i];
+            let v;
+            if(uniformMode){
+                v = 0.5; // mid colour when everything equal
+            } else {
+                v = (Math.log10(p + 1e-12) - logMin) / logRange; // 0..1
+            }
             const rgb = jetColorMap(v);
-            imgData.data[i*4]=rgb[0];
-            imgData.data[i*4+1]=rgb[1];
-            imgData.data[i*4+2]=rgb[2];
-            imgData.data[i*4+3]=Math.round(v*200); // alpha
+            imgData.data[i*4]   = rgb[0];
+            imgData.data[i*4+1] = rgb[1];
+            imgData.data[i*4+2] = rgb[2];
+            imgData.data[i*4+3] = 60 + Math.round(v*150); // transparency range
         }
         this.heatCtx.putImageData(imgData,0,0);
     }
@@ -299,25 +318,24 @@ class ImageBrushApp {
         if(!this.bgCanvas || !this.heatmapCanvas) return;
         const bgCtx = this.bgCtx;
         const originalImgData = bgCtx.getImageData(0,0,this.bgCanvas.width,this.bgCanvas.height);
-        const attentionImgData = this.heatCtx.getImageData(0,0,this.heatmapCanvas.width,this.heatmapCanvas.height);
+        const probCopy = new Float32Array(this.attentionData); // clone current attention probabilities
         const strength = this.fixedWarpStrength;
-        warpFromProb(originalImgData, attentionImgData, strength).then((warped)=>{
-            // create warped canvas
-            if(this.warpedWrapper){
-                this.warpedWrapper.remove();
-            }
-            this.warpedWrapper = document.createElement('div');
-            this.warpedWrapper.className='canvas-wrapper';
-            const warpedCanvas = document.createElement('canvas');
-            warpedCanvas.width = this.bgCanvas.width;
-            warpedCanvas.height = this.bgCanvas.height;
-            warpedCanvas.style.width = this.bgCanvas.style.width;
-            warpedCanvas.style.height = this.bgCanvas.style.height;
-            const wctx = warpedCanvas.getContext('2d');
-            wctx.putImageData(warped,0,0);
-            this.warpedWrapper.appendChild(warpedCanvas);
-            this.canvasContainer.appendChild(this.warpedWrapper);
-        });
+        const warped = warpFromProbSync(originalImgData, probCopy, strength);
+        // Display result
+        if(this.warpedWrapper){
+            this.warpedWrapper.remove();
+        }
+        this.warpedWrapper = document.createElement('div');
+        this.warpedWrapper.className='canvas-wrapper';
+        const warpedCanvas = document.createElement('canvas');
+        warpedCanvas.width = this.bgCanvas.width;
+        warpedCanvas.height = this.bgCanvas.height;
+        warpedCanvas.style.width = this.bgCanvas.style.width;
+        warpedCanvas.style.height = this.bgCanvas.style.height;
+        const wctx = warpedCanvas.getContext('2d');
+        wctx.putImageData(warped,0,0);
+        this.warpedWrapper.appendChild(warpedCanvas);
+        this.canvasContainer.appendChild(this.warpedWrapper);
     }
 }
 
@@ -401,10 +419,10 @@ function warpFromProb(originalImageData, attentionMapImageData, warpStrengthFact
             function get(ix,iy){
                 const offset = (iy*W+ix)*4;
                 return [
-                    originalImageData.data[offset],
-                    originalImageData.data[offset+1],
-                    originalImageData.data[offset+2],
-                    originalImageData.data[offset+3]
+                    orig.data[offset],
+                    orig.data[offset+1],
+                    orig.data[offset+2],
+                    orig.data[offset+3]
                 ];
             }
             const c00=get(x0,y0), c10=get(x1,y0), c01=get(x0,y1), c11=get(x1,y1);
@@ -446,4 +464,34 @@ function jetColorMap(v){
     const g = Math.min(1, Math.max(0, Math.min(fourV-0.5, -fourV+3.5)));
     const b = Math.min(1, Math.max(0, Math.min(fourV+0.5, -fourV+2.5)));
     return [Math.round(r*255),Math.round(g*255),Math.round(b*255)];
+}
+
+// Add synchronous warp using prob array
+function warpFromProbSync(originalImageData, probArray, warpStrength){
+    const W = originalImageData.width;
+    const H = originalImageData.height;
+    const N = W*H;
+    const uniform = 1/N;
+    const pdf = new Float32Array(N);
+    let total=0;
+    for(let k=0;k<N;k++){ total+=probArray[k]; }
+    if(total===0){ pdf.fill(uniform);} else{
+        for(let k=0;k<N;k++) pdf[k]=(1-warpStrength)*uniform + warpStrength*(probArray[k]/total);
+    }
+    const pmfX=new Float32Array(W).fill(0), pmfY=new Float32Array(H).fill(0);
+    for(let j=0;j<H;j++){
+        for(let i=0;i<W;i++){
+            const p=pdf[j*W+i]; pmfX[i]+=p; pmfY[j]+=p;
+        }
+    }
+    const cdfX=new Float32Array(W), cdfY=new Float32Array(H);
+    cdfX[0]=pmfX[0]; for(let i=1;i<W;i++) cdfX[i]=cdfX[i-1]+pmfX[i];
+    cdfY[0]=pmfY[0]; for(let j=1;j<H;j++) cdfY[j]=cdfY[j-1]+pmfY[j];
+    cdfX[W-1]=1; cdfY[H-1]=1;
+    const epsilon=1e-8;
+    const output=new ImageData(W,H);
+    function inv(v,cdf){let l=0,h=cdf.length-1;while(l<h){const m=(l+h)>>1;if(v>cdf[m])l=m+1;else h=m;} if(l===0)return 0; const prev=cdf[l-1],cur=cdf[l]; const f=(cur-prev)>epsilon? (v-prev)/(cur-prev):0; return (l-1)+f;}
+    function sample(x,y){x=Math.max(0,Math.min(W-1,x));y=Math.max(0,Math.min(H-1,y));const x0=Math.floor(x),y0=Math.floor(y);const x1=Math.min(x0+1,W-1),y1=Math.min(y0+1,H-1);const dx=x-x0,dy=y-y0;function get(ix,iy){const o=(iy*W+ix)*4;const d=originalImageData.data;return[d[o],d[o+1],d[o+2],d[o+3]];} const c00=get(x0,y0),c10=get(x1,y0),c01=get(x0,y1),c11=get(x1,y1);const out=[0,0,0,0];for(let k=0;k<4;k++){const t=c00[k]*(1-dx)+c10[k]*dx;const b=c01[k]*(1-dx)+c11[k]*dx;out[k]=t*(1-dy)+b*dy;}return out;}
+    for(let y=0;y<H;y++){const v=H<=1?0.5:y/(H-1);const ys=inv(v,cdfY);for(let x=0;x<W;x++){const u=W<=1?0.5:x/(W-1);const xs=inv(u,cdfX);const col=sample(xs,ys);const idx=(y*W+x)*4;output.data[idx]=col[0];output.data[idx+1]=col[1];output.data[idx+2]=col[2];output.data[idx+3]=col[3];}}
+    return output;
 } 
