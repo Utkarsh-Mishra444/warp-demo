@@ -19,30 +19,27 @@ class ImageBrushApp {
         this.imageUpload = document.getElementById('imageUpload');
         this.imageInfo = document.getElementById('imageInfo');
         this.canvasContainer = document.getElementById('canvasContainer');
+        this.outputCanvasContainer = document.getElementById('outputCanvasContainer');
         this.brushSize = document.getElementById('brushSize');
         this.brushSizeValue = document.getElementById('brushSizeValue');
         this.brushOpacity = null;
         this.brushOpacityValue = null;
         this.clearCanvas = document.getElementById('clearCanvas');
         this.downloadResult = document.getElementById('downloadResult');
-        // New elements for warp / heatmap
-        this.warpStrength = null;
-        this.warpStrengthValue = null;
         this.applyWarp = document.getElementById('applyWarp');
         this.toggleHeatmap = document.getElementById('toggleHeatmap');
         this.fixedWarpStrength = 0.3;
+        
+        this.outputCanvas = null;
     }
 
     setupEventListeners() {
-        // Upload functionality
         this.uploadBtn.addEventListener('click', () => this.imageUpload.click());
         this.imageUpload.addEventListener('change', (e) => this.handleImageUpload(e));
 
-        // Tool controls
         this.brushSize.addEventListener('input', (e) => this.updateBrushSize(e));
         this.clearCanvas.addEventListener('click', () => this.clearDrawing());
         this.downloadResult.addEventListener('click', () => this.downloadImage());
-        // New listeners
         this.applyWarp.addEventListener('click', ()=> this.runWarp());
         this.toggleHeatmap.addEventListener('change', ()=> this.updateHeatmapVisibility());
     }
@@ -69,87 +66,65 @@ class ImageBrushApp {
     }
 
     setupCanvas(img) {
-        // Clear container
         this.canvasContainer.innerHTML = '';
+        this.outputCanvasContainer.innerHTML = `<div class="placeholder"><p>Result will appear here</p></div>`;
+        this.outputCanvas = null;
+        document.getElementById('downloadResult').disabled = true;
 
-        // Determine maximum display size (keep within container and viewport)
-        const containerWidth = this.canvasContainer.clientWidth || window.innerWidth * 0.9;
-        const containerHeight = window.innerHeight * 0.7; // 70% of viewport height
+        const containerWidth = this.canvasContainer.clientWidth;
+        const containerHeight = this.canvasContainer.clientHeight;
 
-        // Calculate scaling ratio while preserving aspect ratio
         const widthRatio = containerWidth / img.width;
         const heightRatio = containerHeight / img.height;
-        const ratio = Math.min(widthRatio, heightRatio, 1); // never upscale
+        const ratio = Math.min(widthRatio, heightRatio, 1);
 
         const displayWidth = Math.round(img.width * ratio);
         const displayHeight = Math.round(img.height * ratio);
 
-        // Create canvas wrapper
-        const wrapper = document.createElement('div');
-        wrapper.className = 'canvas-wrapper';
-        // Explicitly set wrapper dimensions so flexbox can center it
-        wrapper.style.width = displayWidth + 'px';
-        wrapper.style.height = displayHeight + 'px';
-
-        // Background canvas (for the uploaded image)
         const bgCanvas = document.createElement('canvas');
-        bgCanvas.className = 'background-image';
         bgCanvas.width = displayWidth;
         bgCanvas.height = displayHeight;
-        bgCanvas.style.width = displayWidth + 'px';
-        bgCanvas.style.height = displayHeight + 'px';
-
+        bgCanvas.style.position = 'absolute';
         const bgCtx = bgCanvas.getContext('2d');
         bgCtx.drawImage(img, 0, 0, displayWidth, displayHeight);
 
-        // Save references for later warp processing
         this.bgCanvas = bgCanvas;
         this.bgCtx = bgCtx;
 
-        // Heatmap canvas (visual + data)
         this.heatmapCanvas = document.createElement('canvas');
-        this.heatmapCanvas.className = 'heatmap-canvas';
         this.heatmapCanvas.width = displayWidth;
         this.heatmapCanvas.height = displayHeight;
-        this.heatmapCanvas.style.width = displayWidth + 'px';
-        this.heatmapCanvas.style.height = displayHeight + 'px';
+        this.heatmapCanvas.style.position = 'absolute';
+        this.heatmapCanvas.style.pointerEvents = 'none';
         this.heatCtx = this.heatmapCanvas.getContext('2d');
 
-        // Initialize paintAccum array
         const totalPix = displayWidth*displayHeight;
         this.paintAccum = new Float32Array(totalPix).fill(0);
         this.renderHeatmap();
 
-        // Drawing canvas (overlay)
         this.canvas = document.createElement('canvas');
-        this.canvas.className = 'drawing-canvas';
         this.canvas.width = displayWidth;
         this.canvas.height = displayHeight;
-        this.canvas.style.width = displayWidth + 'px';
-        this.canvas.style.height = displayHeight + 'px';
+        this.canvas.style.position = 'absolute';
+        this.canvas.style.cursor = 'crosshair';
         this.ctx = this.canvas.getContext('2d');
         this.ctx.lineCap = 'round';
         this.ctx.lineJoin = 'round';
 
-        // Append canvases
-        wrapper.appendChild(bgCanvas);
-        wrapper.appendChild(this.heatmapCanvas);
-        wrapper.appendChild(this.canvas);
-        this.canvasContainer.appendChild(wrapper);
+        this.canvasContainer.appendChild(bgCanvas);
+        this.canvasContainer.appendChild(this.heatmapCanvas);
+        this.canvasContainer.appendChild(this.canvas);
 
-        // Setup drawing events
         this.setupDrawingEvents();
         this.updateHeatmapVisibility();
     }
 
     setupDrawingEvents() {
-        // Mouse events
         this.canvas.addEventListener('mousedown', (e) => this.startDrawing(e));
         this.canvas.addEventListener('mousemove', (e) => this.draw(e));
         this.canvas.addEventListener('mouseup', () => this.stopDrawing());
         this.canvas.addEventListener('mouseout', () => this.stopDrawing());
 
-        // Touch events for mobile
         this.canvas.addEventListener('touchstart', (e) => {
             e.preventDefault();
             const touch = e.touches[0];
@@ -191,7 +166,6 @@ class ImageBrushApp {
         const currentX = e.clientX - rect.left;
         const currentY = e.clientY - rect.top;
 
-        // keep canvas blank; we only update paintAccum
         this.ctx.clearRect(0,0,this.canvas.width,this.canvas.height);
 
         this.addAttention(currentX, currentY);
@@ -206,36 +180,33 @@ class ImageBrushApp {
     }
 
     updateBrushSize(e) {
-        this.brushSizeValue.textContent = e.target.value;
+        this.brushSizeValue.textContent = e.target.value + 'px';
     }
 
     clearDrawing() {
         if (this.ctx) {
             this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
         }
+        if (this.paintAccum) {
+            this.paintAccum.fill(0);
+            this.renderHeatmap();
+        }
+        if (this.outputCanvasContainer) {
+            this.outputCanvasContainer.innerHTML = `<div class="placeholder"><p>Result will appear here</p></div>`;
+            this.outputCanvas = null;
+            document.getElementById('downloadResult').disabled = true;
+        }
     }
 
     downloadImage() {
-        if (!this.canvas || !this.backgroundImage) {
-            alert('Please upload an image and draw something first!');
+        if (!this.outputCanvas) {
+            alert('Please apply the warp to generate a result first!');
             return;
         }
 
-        // Create a temporary canvas matching the DISPLAY resolution
-        const tempCanvas = document.createElement('canvas');
-        tempCanvas.width = this.canvas.width;
-        tempCanvas.height = this.canvas.height;
-        const tempCtx = tempCanvas.getContext('2d');
-
-        // Draw the scaled background image
-        tempCtx.drawImage(this.backgroundImage, 0, 0, tempCanvas.width, tempCanvas.height);
-        // Draw the drawing layer
-        tempCtx.drawImage(this.canvas, 0, 0);
-
-        // Download link
         const link = document.createElement('a');
-        link.download = 'edited-image.png';
-        link.href = tempCanvas.toDataURL();
+        link.download = 'warped-image.png';
+        link.href = this.outputCanvas.toDataURL();
         link.click();
     }
 
@@ -245,6 +216,7 @@ class ImageBrushApp {
             <strong>Dimensions:</strong> ${width} × ${height} pixels
         `;
         this.imageInfo.style.display = 'block';
+        this.runWarpSync();
     }
 
     updateToolValues() {
@@ -252,9 +224,8 @@ class ImageBrushApp {
     }
 
     updateHeatmapVisibility(){
-        if(this.heatmapCanvas){
-            this.heatmapCanvas.style.display = this.toggleHeatmap.checked ? 'block' : 'none';
-        }
+        if(!this.heatmapCanvas) return;
+        this.heatmapCanvas.style.display = this.toggleHeatmap.checked ? 'block' : 'none';
     }
 
     addAttention(x,y){
@@ -263,7 +234,7 @@ class ImageBrushApp {
         const twoSigma2 = 2*sigma*sigma;
         const width = this.heatmapCanvas.width;
         const height = this.heatmapCanvas.height;
-        const strokeStrength = 5; // additive weight per stroke
+        const strokeStrength = 5;
 
         for(let dy=-radius; dy<=radius; dy++){
             const yIdx = Math.round(y+dy);
@@ -273,7 +244,7 @@ class ImageBrushApp {
                 if(xIdx<0 || xIdx>=width) continue;
                 const dist2 = dx*dx + dy*dy;
                 if(dist2 > radius*radius) continue;
-                const weight = Math.exp(-dist2 / twoSigma2); // gaussian falloff
+                const weight = Math.exp(-dist2 / twoSigma2);
                 const idx = yIdx*width + xIdx;
                 this.paintAccum[idx] += strokeStrength * weight;
             }
@@ -302,57 +273,65 @@ class ImageBrushApp {
             const p = combined[i];
             let v;
             if(uniformMode){
-                v = 0.5; // mid colour when everything equal
+                v = 0.5;
             } else {
-                v = (Math.log10(p + 1e-12) - logMin) / logRange; // 0..1
+                v = (Math.log10(p + 1e-12) - logMin) / logRange;
             }
             const rgb = jetColorMap(v);
             imgData.data[i*4]   = rgb[0];
             imgData.data[i*4+1] = rgb[1];
             imgData.data[i*4+2] = rgb[2];
-            imgData.data[i*4+3] = 60 + Math.round(v*150); // transparency range
+            imgData.data[i*4+3] = 60 + Math.round(v*150);
         }
         this.heatCtx.putImageData(imgData,0,0);
     }
 
     runWarp(){
-        if(!this.bgCanvas || !this.heatmapCanvas) return;
-        const bgCtx = this.bgCtx;
-        const originalImgData = bgCtx.getImageData(0,0,this.bgCanvas.width,this.bgCanvas.height);
-        const width = this.bgCanvas.width;
-        const height = this.bgCanvas.height;
-        const N = width*height;
-        const probCopy = new Float32Array(this.paintAccum.length);
-        for(let i=0;i<probCopy.length;i++) probCopy[i] = this.baseVal + this.paintAccum[i];
-        // normalise
-        let total = 0; for(let v of probCopy) total += v; const invTotal = 1/total; for(let i=0;i<probCopy.length;i++) probCopy[i]*=invTotal;
-        const strength = this.fixedWarpStrength;
-        const warped = warpFromProbSync(originalImgData, probCopy, strength);
-        // Display result
-        if(this.warpedWrapper){
-            this.warpedWrapper.remove();
+        this.runWarpSync();
+    }
+
+    runWarpSync(){
+        if (!this.bgCanvas) {
+            alert("Please upload an image first.");
+            return;
         }
-        this.warpedWrapper = document.createElement('div');
-        this.warpedWrapper.className='canvas-wrapper';
-        const warpedCanvas = document.createElement('canvas');
-        warpedCanvas.width = this.bgCanvas.width;
-        warpedCanvas.height = this.bgCanvas.height;
-        warpedCanvas.style.width = this.bgCanvas.style.width;
-        warpedCanvas.style.height = this.bgCanvas.style.height;
-        const wctx = warpedCanvas.getContext('2d');
-        wctx.putImageData(warped,0,0);
-        this.warpedWrapper.appendChild(warpedCanvas);
-        this.canvasContainer.appendChild(this.warpedWrapper);
+
+        const W = this.bgCanvas.width;
+        const H = this.bgCanvas.height;
+
+        // Build probability array including base uniform component
+        const probArray = new Float32Array(this.paintAccum.length);
+        for (let i = 0; i < probArray.length; i++) {
+            probArray[i] = this.baseVal + this.paintAccum[i];
+        }
+        // Normalize to sum to 1
+        let total = 0;
+        for (let v of probArray) total += v;
+        const invTotal = 1 / total;
+        for (let i = 0; i < probArray.length; i++) probArray[i] *= invTotal;
+
+        const originalImageData = this.bgCtx.getImageData(0, 0, W, H);
+        const warpedImageData = warpFromProbSync(originalImageData, probArray, this.fixedWarpStrength);
+        
+        if (!this.outputCanvas) {
+            this.outputCanvas = document.createElement('canvas');
+            this.outputCanvas.width = W;
+            this.outputCanvas.height = H;
+            this.outputCanvasContainer.innerHTML = '';
+            this.outputCanvasContainer.appendChild(this.outputCanvas);
+        }
+        
+        const outCtx = this.outputCanvas.getContext('2d');
+        outCtx.putImageData(warpedImageData, 0, 0);
+
+        document.getElementById('downloadResult').disabled = false;
     }
 }
 
-// Initialize the app when the DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
     new ImageBrushApp();
 });
 
-// Remove old warpImageProcessor and hsl functions and add new algorithmic correct version
-// --- NEW AXIS-ALIGNED STRIP WARP (spec-compliant) ---
 function warpFromProb(originalImageData, attentionMapImageData, warpStrengthFactor){
     return new Promise((resolve)=>{
         const W = originalImageData.width;
@@ -360,12 +339,11 @@ function warpFromProb(originalImageData, attentionMapImageData, warpStrengthFact
         const output = new ImageData(W,H);
         const epsilon = 1e-8;
 
-        // 1. Build attention probability distribution
         const prob = new Float32Array(W*H);
         let total = 0;
         for(let j=0;j<H;j++){
             for(let i=0;i<W;i++){
-                const alpha = attentionMapImageData.data[(j*W+i)*4+3]/255; // use alpha
+                const alpha = attentionMapImageData.data[(j*W+i)*4+3]/255;
                 prob[j*W+i] = alpha;
                 total += alpha;
             }
@@ -374,13 +352,11 @@ function warpFromProb(originalImageData, attentionMapImageData, warpStrengthFact
         if(total < epsilon){
             prob.fill(uniformVal);
         }else{
-            // blend with uniform using warpStrengthFactor
             for(let k=0;k<prob.length;k++){
                 prob[k] = (1-warpStrengthFactor)*uniformVal + warpStrengthFactor*(prob[k]/total);
             }
         }
 
-        // 2. Compute PMFs along X and Y
         const pmfX = new Float32Array(W).fill(0);
         const pmfY = new Float32Array(H).fill(0);
         for(let j=0;j<H;j++){
@@ -390,9 +366,7 @@ function warpFromProb(originalImageData, attentionMapImageData, warpStrengthFact
                 pmfY[j]+=p;
             }
         }
-        // 3. Normalize PMFs (already sum to 1)
 
-        // 4. Build CDFs
         const cdfX = new Float32Array(W);
         const cdfY = new Float32Array(H);
         cdfX[0]=pmfX[0];
@@ -401,7 +375,6 @@ function warpFromProb(originalImageData, attentionMapImageData, warpStrengthFact
         for(let j=1;j<H;j++) cdfY[j]=cdfY[j-1]+pmfY[j];
         cdfX[W-1]=1; cdfY[H-1]=1;
 
-        // Helper inverseCDF via binary search + linear interpolation
         function inverseCDF(val,cdfArray){
             let low=0, high=cdfArray.length-1;
             while(low<high){
@@ -416,7 +389,6 @@ function warpFromProb(originalImageData, attentionMapImageData, warpStrengthFact
             return (idx-1)+frac;
         }
 
-        // Bilinear sample from original
         function sample(orig,x,y){
             x=Math.max(0,Math.min(W-1,x));
             y=Math.max(0,Math.min(H-1,y));
@@ -442,11 +414,10 @@ function warpFromProb(originalImageData, attentionMapImageData, warpStrengthFact
             return out;
         }
 
-        // 5. Generate warped image
         for(let yNew=0;yNew<H;yNew++){
             const v = H<=1?0.5:yNew/(H-1);
             const ySrcIdx = inverseCDF(v,cdfY);
-            const ySrc = ySrcIdx; // already 0..H-1 scale
+            const ySrc = ySrcIdx;
             for(let xNew=0;xNew<W;xNew++){
                 const u = W<=1?0.5:xNew/(W-1);
                 const xSrcIdx = inverseCDF(u,cdfX);
@@ -463,7 +434,6 @@ function warpFromProb(originalImageData, attentionMapImageData, warpStrengthFact
     });
 }
 
-// helper: jet colormap
 function jetColorMap(v){
     v=Math.min(1,Math.max(0,v));
     const fourV = 4*v;
@@ -473,7 +443,6 @@ function jetColorMap(v){
     return [Math.round(r*255),Math.round(g*255),Math.round(b*255)];
 }
 
-// Add synchronous warp using prob array
 function warpFromProbSync(originalImageData, probArray, warpStrength){
     const W = originalImageData.width;
     const H = originalImageData.height;
