@@ -7,46 +7,51 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>AttWarp Demo</h1>
-            <p>Upload an image and paint heatmap to try Attwarp</p>
-        </header>
+    <div class="main-container">
+        <aside class="controls-panel">
+            <header>
+                <h1>AttWarp Demo</h1>
+                <p class="subtitle">Image warping using attention heatmaps.</p>
+            </header>
 
-        <main>
-            <div class="upload-section">
-                <input type="file" id="imageUpload" accept="image/*" style="display: none;">
-                <button id="uploadBtn" class="btn-primary">Upload Image</button>
-                <div id="imageInfo" class="image-info"></div>
-            </div>
-
-            <div class="tools-section">
-                <div class="tools-row">
-                    <div class="tool-group">
-                        <label for="brushSize">Brush Size:</label>
+            <section class="control-group">
+                <h2 class="control-group-title">1. Load Image</h2>
+                <div class="upload-section">
+                    <input type="file" id="imageUpload" accept="image/*" style="display: none;">
+                    <button id="uploadBtn" class="btn btn-primary">Choose an Image</button>
+                    <div id="imageInfo" class="image-info"></div>
+                </div>
+            </section>
+            
+            <section class="control-group">
+                <h2 class="control-group-title">2. Paint Heatmap</h2>
+                <div class="tool">
+                    <label for="brushSize">Brush Size</label>
+                    <div class="slider-container">
                         <input type="range" id="brushSize" min="50" max="250" step="10" value="125">
-                        <span id="brushSizeValue">125</span>px
+                        <span id="brushSizeValue">125px</span>
                     </div>
                 </div>
-
-                <div class="tools-row">
-                    <div class="tool-group">
-                        <label class="heatmap-toggle">
-                            <input type="checkbox" id="toggleHeatmap" checked> Show Heatmap
-                        </label>
-                    </div>
+                <div class="tool">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="toggleHeatmap" checked>
+                        <span>Show Heatmap</span>
+                    </label>
                 </div>
+                 <button id="clearCanvas" class="btn btn-secondary">Clear Heatmap</button>
+            </section>
 
-                <div class="tools-row">
-                    <button id="applyWarp" class="btn-accent">Apply Warp</button>
-                    <button id="clearCanvas" class="btn-secondary">Clear Drawing</button>
-                    <button id="downloadResult" class="btn-primary">Download Result</button>
-                </div>
-            </div>
+            <section class="control-group">
+                <h2 class="control-group-title">3. Apply Warp & Download</h2>
+                <button id="applyWarp" class="btn btn-accent">Apply Warp</button>
+                <button id="downloadResult" class="btn btn-primary" disabled>Download Result</button>
+            </section>
+        </aside>
 
+        <main class="canvas-area">
             <div class="canvas-container" id="canvasContainer">
                 <div class="placeholder">
-                    <p>Upload an image to start drawing</p>
+                    <p>Upload an image to begin</p>
                 </div>
             </div>
         </main>
