@@ -158,8 +158,7 @@ class ImageBrushApp {
         const rect = this.canvas.getBoundingClientRect();
         this.lastX = e.clientX - rect.left;
         this.lastY = e.clientY - rect.top;
-        // Deposit an initial dot so a quick tap still paints
-        this.addAttention(this.lastX, this.lastY);
+        this.addAttention(this.lastX, this.lastY, 1);
         this.renderHeatmap();
     }
 
@@ -170,18 +169,20 @@ class ImageBrushApp {
         const currentX = e.clientX - rect.left;
         const currentY = e.clientY - rect.top;
 
-        // Determine spacing based on brush size so dots overlap nicely
-        const brushSpacing = this.brushSize.value / 4; // tune to taste
         const dx = currentX - this.lastX;
         const dy = currentY - this.lastY;
         const dist = Math.hypot(dx, dy);
-        const steps = Math.max(1, Math.floor(dist / brushSpacing));
+        const brushSpacing = this.brushSize.value / 64; // denser spacing for smoothness
 
-        for (let s = 1; s <= steps; s++) { // start at 1 because lastX/lastY already painted
+        const totalFactor = dist / brushSpacing;
+        const steps = Math.max(1, Math.ceil(dist / brushSpacing));
+        const strengthPerDot = (steps > 0) ? totalFactor / steps : 1;
+
+        for (let s = 1; s <= steps; s++) {
             const t = s / steps;
             const x = this.lastX + t * dx;
             const y = this.lastY + t * dy;
-            this.addAttention(x, y);
+            this.addAttention(x, y, strengthPerDot);
         }
 
         this.renderHeatmap();
@@ -243,24 +244,24 @@ class ImageBrushApp {
             this.heatmapCanvas.style.display = this.toggleHeatmap.checked ? 'block' : 'none';
     }
 
-    addAttention(x,y){
-        const radius = this.brushSize.value/2;
-        const sigma = radius/3;
-        const twoSigma2 = 2*sigma*sigma;
+    addAttention(x, y, strength = 1) {
+        const radius = this.brushSize.value / 2;
+        const sigma = radius; // reasonable slope
+        const twoSigma2 = 2 * sigma * sigma;
         const width = this.heatmapCanvas.width;
         const height = this.heatmapCanvas.height;
-        const strokeStrength = 5;
+        const strokeStrength = 15 * strength;
 
-        for(let dy=-radius; dy<=radius; dy++){
-            const yIdx = Math.round(y+dy);
-            if(yIdx<0 || yIdx>=height) continue;
-            for(let dx=-radius; dx<=radius; dx++){
-                const xIdx = Math.round(x+dx);
-                if(xIdx<0 || xIdx>=width) continue;
-                const dist2 = dx*dx + dy*dy;
-                if(dist2 > radius*radius) continue;
+        for (let dy = -radius; dy <= radius; dy++) {
+            const yIdx = Math.round(y + dy);
+            if (yIdx < 0 || yIdx >= height) continue;
+            for (let dx = -radius; dx <= radius; dx++) {
+                const xIdx = Math.round(x + dx);
+                if (xIdx < 0 || xIdx >= width) continue;
+                const dist2 = dx * dx + dy * dy;
+                if (dist2 > radius * radius) continue;
                 const weight = Math.exp(-dist2 / twoSigma2);
-                const idx = yIdx*width + xIdx;
+                const idx = yIdx * width + xIdx;
                 this.paintAccum[idx] += strokeStrength * weight;
             }
         }
