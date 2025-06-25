@@ -29,6 +29,7 @@ class ImageBrushApp {
         this.applyWarp = document.getElementById('applyWarp');
         this.toggleHeatmap = document.getElementById('toggleHeatmap');
         this.fixedWarpStrength = 0.3;
+        this.transform = document.getElementById('transform');
         
         this.outputCanvas = null;
     }
@@ -225,7 +226,7 @@ class ImageBrushApp {
 
     updateHeatmapVisibility(){
         if(!this.heatmapCanvas) return;
-        this.heatmapCanvas.style.display = this.toggleHeatmap.checked ? 'block' : 'none';
+            this.heatmapCanvas.style.display = this.toggleHeatmap.checked ? 'block' : 'none';
     }
 
     addAttention(x,y){
@@ -300,15 +301,14 @@ class ImageBrushApp {
         const H = this.bgCanvas.height;
 
         // Build probability array including base uniform component
-        const probArray = new Float32Array(this.paintAccum.length);
+        let probArray = new Float32Array(this.paintAccum.length);
         for (let i = 0; i < probArray.length; i++) {
             probArray[i] = this.baseVal + this.paintAccum[i];
         }
-        // Normalize to sum to 1
-        let total = 0;
-        for (let v of probArray) total += v;
-        const invTotal = 1 / total;
-        for (let i = 0; i < probArray.length; i++) probArray[i] *= invTotal;
+
+        // Apply transformation
+        const transformType = this.transform.value;
+        probArray = this.transformAndNormalize(probArray, transformType);
 
         const originalImageData = this.bgCtx.getImageData(0, 0, W, H);
         const warpedImageData = warpFromProbSync(originalImageData, probArray, this.fixedWarpStrength);
@@ -325,6 +325,39 @@ class ImageBrushApp {
         outCtx.putImageData(warpedImageData, 0, 0);
 
         document.getElementById('downloadResult').disabled = false;
+    }
+
+    transformAndNormalize(data, transformType) {
+        let transformedData = new Float32Array(data.length);
+
+        // Apply transformation
+        if (transformType === 'square') {
+            for (let i = 0; i < data.length; i++) {
+                transformedData[i] = data[i] * data[i];
+            }
+        } else if (transformType === 'cube') {
+            for (let i = 0; i < data.length; i++) {
+                transformedData[i] = data[i] * data[i] * data[i];
+            }
+        } else if (transformType === 'log') {
+            for (let i = 0; i < data.length; i++) {
+                transformedData[i] = Math.log(data[i] + 1e-9);
+            }
+        } else { // 'none'
+            transformedData = new Float32Array(data);
+        }
+
+        // Normalize to sum to 1
+        let total = 0;
+        for (let v of transformedData) total += v;
+        if (total > 0) {
+            const invTotal = 1 / total;
+            for (let i = 0; i < transformedData.length; i++) {
+                transformedData[i] *= invTotal;
+            }
+        }
+
+        return transformedData;
     }
 }
 
