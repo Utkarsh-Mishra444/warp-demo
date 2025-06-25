@@ -28,7 +28,7 @@ class ImageBrushApp {
         this.downloadResult = document.getElementById('downloadResult');
         this.applyWarp = document.getElementById('applyWarp');
         this.toggleHeatmap = document.getElementById('toggleHeatmap');
-        this.fixedWarpStrength = 0.3;
+        this.fixedWarpStrength = 0.5;
         this.transform = document.getElementById('transform');
         
         this.outputCanvas = null;
@@ -311,7 +311,7 @@ class ImageBrushApp {
         probArray = this.transformAndNormalize(probArray, transformType);
 
         const originalImageData = this.bgCtx.getImageData(0, 0, W, H);
-        const warpedImageData = warpFromProbSync(originalImageData, probArray, this.fixedWarpStrength);
+        const warpedImageData = warpFromProbSync(originalImageData, probArray);
         
         if (!this.outputCanvas) {
             this.outputCanvas = document.createElement('canvas');
@@ -386,7 +386,7 @@ function warpFromProb(originalImageData, attentionMapImageData, warpStrengthFact
             prob.fill(uniformVal);
         }else{
             for(let k=0;k<prob.length;k++){
-                prob[k] = (1-warpStrengthFactor)*uniformVal + warpStrengthFactor*(prob[k]/total);
+                prob[k] = (1-warpStrengthFactor)*uniformVal + warpStrengthFactor*(prob[k]);
             }
         }
 
@@ -476,27 +476,36 @@ function jetColorMap(v){
     return [Math.round(r*255),Math.round(g*255),Math.round(b*255)];
 }
 
-function warpFromProbSync(originalImageData, probArray, warpStrength){
+function warpFromProbSync(originalImageData, probArray){
     const W = originalImageData.width;
     const H = originalImageData.height;
     const N = W*H;
-    const uniform = 1/N;
-    const pdf = new Float32Array(N);
-    let total=0;
-    for(let k=0;k<N;k++){ total+=probArray[k]; }
-    if(total===0){ pdf.fill(uniform);} else{
-        for(let k=0;k<N;k++) pdf[k]=(1-warpStrength)*uniform + warpStrength*(probArray[k]/total);
-    }
+
+    // The probArray is already normalized and transformed at this point.
+    // We can use it directly as the PDF.
+    const pdf = probArray;
+
     const pmfX=new Float32Array(W).fill(0), pmfY=new Float32Array(H).fill(0);
     for(let j=0;j<H;j++){
         for(let i=0;i<W;i++){
             const p=pdf[j*W+i]; pmfX[i]+=p; pmfY[j]+=p;
         }
     }
+
     const cdfX=new Float32Array(W), cdfY=new Float32Array(H);
     cdfX[0]=pmfX[0]; for(let i=1;i<W;i++) cdfX[i]=cdfX[i-1]+pmfX[i];
     cdfY[0]=pmfY[0]; for(let j=1;j<H;j++) cdfY[j]=cdfY[j-1]+pmfY[j];
-    cdfX[W-1]=1; cdfY[H-1]=1;
+
+    // Normalize the CDFs by their last element (the total sum)
+    const totalX = cdfX[W-1];
+    const totalY = cdfY[H-1];
+    if (totalX > 1e-8) {
+        for (let i = 0; i < W; i++) cdfX[i] /= totalX;
+    }
+    if (totalY > 1e-8) {
+        for (let j = 0; j < H; j++) cdfY[j] /= totalY;
+    }
+    
     const epsilon=1e-8;
     const output=new ImageData(W,H);
     function inv(v,cdf){let l=0,h=cdf.length-1;while(l<h){const m=(l+h)>>1;if(v>cdf[m])l=m+1;else h=m;} if(l===0)return 0; const prev=cdf[l-1],cur=cdf[l]; const f=(cur-prev)>epsilon? (v-prev)/(cur-prev):0; return (l-1)+f;}
