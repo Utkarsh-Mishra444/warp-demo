@@ -339,26 +339,31 @@ class ImageBrushApp {
     }
 
     transformAndNormalize(data, transformType) {
+        const baseline = this.baseVal;
         let transformedData = new Float32Array(data.length);
 
-        // Apply transformation
-        if (transformType === 'square') {
-            for (let i = 0; i < data.length; i++) {
-                transformedData[i] = data[i] * data[i];
+        for (let i = 0; i < data.length; i++) {
+            const diff = data[i] - baseline; // extra mass a
+            // dimensionless ratio relative to baseline
+            const ratio = diff / baseline; // note: can be 0
+            let boost;
+
+            if (transformType === 'square') {
+                boost = ratio * ratio; // (a/b)^2
+            } else if (transformType === 'cube') {
+                boost = ratio * ratio * ratio; // (a/b)^3
+            } else if (transformType === 'log') {
+                // Use log1p to avoid negative weights when ratio is small; ensures boost ≥ 0
+                boost = Math.log1p(ratio); // log(1 + a/b)
+            } else { // 'none'
+                boost = ratio; // (a/b)
             }
-        } else if (transformType === 'cube') {
-            for (let i = 0; i < data.length; i++) {
-                transformedData[i] = data[i] * data[i] * data[i];
-            }
-        } else if (transformType === 'log') {
-            for (let i = 0; i < data.length; i++) {
-                transformedData[i] = Math.log(data[i] + 1e-9);
-            }
-        } else { // 'none'
-            transformedData = new Float32Array(data);
+
+            // convert back to absolute mass units and add baseline
+            transformedData[i] = baseline * (1 + boost);
         }
 
-        // Normalize to sum to 1
+        // Normalize to sum to 1 (existing behaviour)
         let total = 0;
         for (let v of transformedData) total += v;
         if (total > 0) {
