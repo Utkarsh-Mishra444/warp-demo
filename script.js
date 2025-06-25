@@ -7,7 +7,7 @@ class ImageBrushApp {
         this.lastX = 0;
         this.lastY = 0;
 
-        this.baseVal = 250; // uniform base weight per pixel
+        this.baseVal = 100; // uniform base weight per pixel
         
         this.initializeElements();
         this.setupEventListeners();
@@ -245,7 +245,7 @@ class ImageBrushApp {
 
     addAttention(x,y){
         const radius = this.brushSize.value/2;
-        const sigma = radius*4;
+        const sigma = radius/3;
         const twoSigma2 = 2*sigma*sigma;
         const width = this.heatmapCanvas.width;
         const height = this.heatmapCanvas.height;
@@ -279,10 +279,8 @@ class ImageBrushApp {
             if(p<minP) minP=p;
             if(p>maxP) maxP=p;
         }
-        const uniformMode = (maxP - minP) < 1e-12;
-        const logMax = Math.log10(maxP + 1e-12);
-        const logMin = Math.log10(minP + 1e-12);
-        const logRange = logMax - logMin || 1e-8;
+        const range = maxP - minP;
+        const uniformMode = range < 1e-12;
 
         for(let i=0;i<combined.length;i++){
             const p = combined[i];
@@ -290,7 +288,7 @@ class ImageBrushApp {
             if(uniformMode){
                 v = 0.5;
             } else {
-                v = (Math.log10(p + 1e-12) - logMin) / logRange;
+                v = (p - minP) / range; // linear scaling
             }
             const rgb = jetColorMap(v);
             imgData.data[i*4]   = rgb[0];
