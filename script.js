@@ -352,9 +352,8 @@ class ImageBrushApp {
                 boost = ratio * ratio; // (a/b)^2
             } else if (transformType === 'cube') {
                 boost = ratio * ratio * ratio; // (a/b)^3
-            } else if (transformType === 'log') {
-                // Use log1p to avoid negative weights when ratio is small; ensures boost ≥ 0
-                boost = Math.log1p(ratio); // log(1 + a/b)
+            } else if (transformType === 'sqrt') {
+                boost = Math.sqrt(ratio); // sqrt(a/b)
             } else { // 'none'
                 boost = ratio; // (a/b)
             }
