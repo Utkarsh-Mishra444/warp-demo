@@ -271,25 +271,22 @@ class ImageBrushApp {
         const height = this.heatmapCanvas.height;
         const imgData = this.heatCtx.createImageData(width,height);
 
-        let minP = Infinity, maxP = 0;
         const combined = new Float32Array(this.paintAccum.length);
+        let maxP = 0;
         for(let i=0;i<combined.length;i++){
             const p = this.baseVal + this.paintAccum[i];
             combined[i]=p;
-            if(p<minP) minP=p;
             if(p>maxP) maxP=p;
         }
-        const range = maxP - minP;
-        const uniformMode = range < 1e-12;
+        const baseline = this.baseVal;
+        const hotRef = Math.max(2*baseline, maxP);
+        const denom = hotRef - baseline || 1e-6;
 
         for(let i=0;i<combined.length;i++){
             const p = combined[i];
-            let v;
-            if(uniformMode){
-                v = 0.5;
-            } else {
-                v = (p - minP) / range; // linear scaling
-            }
+            let v = (p - baseline) / denom;
+            if(v<0) v = 0;
+            if(v>1) v = 1;
             const rgb = jetColorMap(v);
             imgData.data[i*4]   = rgb[0];
             imgData.data[i*4+1] = rgb[1];
