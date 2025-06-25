@@ -7,7 +7,7 @@ class ImageBrushApp {
         this.lastX = 0;
         this.lastY = 0;
 
-        this.baseVal = 100; // uniform base weight per pixel
+        this.baseVal = 250; // uniform base weight per pixel
         
         this.initializeElements();
         this.setupEventListeners();
@@ -250,7 +250,7 @@ class ImageBrushApp {
         const twoSigma2 = 2 * sigma * sigma;
         const width = this.heatmapCanvas.width;
         const height = this.heatmapCanvas.height;
-        const strokeStrength = 15 * strength;
+        const strokeStrength = 1 * strength;
 
         for (let dy = -radius; dy <= radius; dy++) {
             const yIdx = Math.round(y + dy);
@@ -280,7 +280,7 @@ class ImageBrushApp {
             if(p>maxP) maxP=p;
         }
         const baseline = this.baseVal;
-        const hotRef = Math.max(2*baseline, maxP);
+        const hotRef = Math.max(4*baseline, maxP);
         const denom = hotRef - baseline || 1e-6;
 
         for(let i=0;i<combined.length;i++){
