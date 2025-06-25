@@ -75,9 +75,10 @@ class ImageBrushApp {
         const containerWidth = this.canvasContainer.clientWidth;
         const containerHeight = this.canvasContainer.clientHeight;
 
+        // Scale to fill the container as much as possible
         const widthRatio = containerWidth / img.width;
         const heightRatio = containerHeight / img.height;
-        const ratio = Math.min(widthRatio, heightRatio, 1);
+        const ratio = Math.min(widthRatio, heightRatio) * 0.95; // 95% to leave small margin
 
         const displayWidth = Math.round(img.width * ratio);
         const displayHeight = Math.round(img.height * ratio);

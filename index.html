@@ -8,12 +8,12 @@
 </head>
 <body>
     <div class="main-container">
-        <aside class="controls-panel">
-            <header>
-                <h1>AttWarp Demo</h1>
-                <p class="subtitle">Image warping using attention heatmaps.</p>
-            </header>
+        <header class="header-section">
+            <h1>AttWarp Demo</h1>
+            <p class="subtitle">Image warping using attention heatmaps.</p>
+        </header>
 
+        <div class="controls-panel">
             <section class="control-group">
                 <h2 class="control-group-title">1. Load Image</h2>
                 <div class="upload-section">
@@ -47,7 +47,7 @@
                 <div class="tool">
                     <label for="transform">Transform</label>
                     <select id="transform">
-                        <option value="none" selected>None</option>
+                        <option value="none" selected>Identity</option>
                         <option value="square">Square</option>
                         <option value="cube">Cube</option>
                         <option value="log">Log</option>
@@ -55,7 +55,7 @@
                 </div>
                 <button id="downloadResult" class="btn btn-primary" disabled>Download Result</button>
             </section>
-        </aside>
+        </div>
 
         <main class="canvas-area">
             <div class="image-display-container">
