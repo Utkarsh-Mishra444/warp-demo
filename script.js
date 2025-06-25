@@ -6,8 +6,8 @@ class ImageBrushApp {
         this.isDrawing = false;
         this.lastX = 0;
         this.lastY = 0;
-        
-        this.baseVal = 1; // uniform base weight per pixel
+
+        this.baseVal = 250; // uniform base weight per pixel
         
         this.initializeElements();
         this.setupEventListeners();
@@ -158,6 +158,9 @@ class ImageBrushApp {
         const rect = this.canvas.getBoundingClientRect();
         this.lastX = e.clientX - rect.left;
         this.lastY = e.clientY - rect.top;
+        // Deposit an initial dot so a quick tap still paints
+        this.addAttention(this.lastX, this.lastY);
+        this.renderHeatmap();
     }
 
     draw(e) {
@@ -167,9 +170,20 @@ class ImageBrushApp {
         const currentX = e.clientX - rect.left;
         const currentY = e.clientY - rect.top;
 
-        this.ctx.clearRect(0,0,this.canvas.width,this.canvas.height);
+        // Determine spacing based on brush size so dots overlap nicely
+        const brushSpacing = this.brushSize.value / 4; // tune to taste
+        const dx = currentX - this.lastX;
+        const dy = currentY - this.lastY;
+        const dist = Math.hypot(dx, dy);
+        const steps = Math.max(1, Math.floor(dist / brushSpacing));
 
-        this.addAttention(currentX, currentY);
+        for (let s = 1; s <= steps; s++) { // start at 1 because lastX/lastY already painted
+            const t = s / steps;
+            const x = this.lastX + t * dx;
+            const y = this.lastY + t * dy;
+            this.addAttention(x, y);
+        }
+
         this.renderHeatmap();
 
         this.lastX = currentX;
@@ -231,7 +245,7 @@ class ImageBrushApp {
 
     addAttention(x,y){
         const radius = this.brushSize.value/2;
-        const sigma = radius/2;
+        const sigma = radius*4;
         const twoSigma2 = 2*sigma*sigma;
         const width = this.heatmapCanvas.width;
         const height = this.heatmapCanvas.height;
