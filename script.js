@@ -365,108 +365,6 @@ document.addEventListener('DOMContentLoaded', () => {
     new ImageBrushApp();
 });
 
-function warpFromProb(originalImageData, attentionMapImageData, warpStrengthFactor){
-    return new Promise((resolve)=>{
-        const W = originalImageData.width;
-        const H = originalImageData.height;
-        const output = new ImageData(W,H);
-        const epsilon = 1e-8;
-
-        const prob = new Float32Array(W*H);
-        let total = 0;
-        for(let j=0;j<H;j++){
-            for(let i=0;i<W;i++){
-                const alpha = attentionMapImageData.data[(j*W+i)*4+3]/255;
-                prob[j*W+i] = alpha;
-                total += alpha;
-            }
-        }
-        const uniformVal = 1.0/(W*H);
-        if(total < epsilon){
-            prob.fill(uniformVal);
-        }else{
-            for(let k=0;k<prob.length;k++){
-                prob[k] = (1-warpStrengthFactor)*uniformVal + warpStrengthFactor*(prob[k]);
-            }
-        }
-
-        const pmfX = new Float32Array(W).fill(0);
-        const pmfY = new Float32Array(H).fill(0);
-        for(let j=0;j<H;j++){
-            for(let i=0;i<W;i++){
-                const p = prob[j*W+i];
-                pmfX[i]+=p;
-                pmfY[j]+=p;
-            }
-        }
-
-        const cdfX = new Float32Array(W);
-        const cdfY = new Float32Array(H);
-        cdfX[0]=pmfX[0];
-        for(let i=1;i<W;i++) cdfX[i]=cdfX[i-1]+pmfX[i];
-        cdfY[0]=pmfY[0];
-        for(let j=1;j<H;j++) cdfY[j]=cdfY[j-1]+pmfY[j];
-        cdfX[W-1]=1; cdfY[H-1]=1;
-
-        function inverseCDF(val,cdfArray){
-            let low=0, high=cdfArray.length-1;
-            while(low<high){
-                const mid = Math.floor((low+high)/2);
-                if(val>cdfArray[mid]) low=mid+1; else high=mid;
-            }
-            const idx = low;
-            if(idx===0) return 0;
-            const prev = cdfArray[idx-1];
-            const curr = cdfArray[idx];
-            const frac = (curr-prev)>epsilon? (val-prev)/(curr-prev):0;
-            return (idx-1)+frac;
-        }
-
-        function sample(orig,x,y){
-            x=Math.max(0,Math.min(W-1,x));
-            y=Math.max(0,Math.min(H-1,y));
-            const x0=Math.floor(x), y0=Math.floor(y);
-            const x1=Math.min(x0+1,W-1), y1=Math.min(y0+1,H-1);
-            const dx=x-x0, dy=y-y0;
-            function get(ix,iy){
-                const offset = (iy*W+ix)*4;
-                return [
-                    orig.data[offset],
-                    orig.data[offset+1],
-                    orig.data[offset+2],
-                    orig.data[offset+3]
-                ];
-            }
-            const c00=get(x0,y0), c10=get(x1,y0), c01=get(x0,y1), c11=get(x1,y1);
-            const out=[0,0,0,0];
-            for(let k=0;k<4;k++){
-                const top = c00[k]*(1-dx)+c10[k]*dx;
-                const bottom = c01[k]*(1-dx)+c11[k]*dx;
-                out[k]=top*(1-dy)+bottom*dy;
-            }
-            return out;
-        }
-
-        for(let yNew=0;yNew<H;yNew++){
-            const v = H<=1?0.5:yNew/(H-1);
-            const ySrcIdx = inverseCDF(v,cdfY);
-            const ySrc = ySrcIdx;
-            for(let xNew=0;xNew<W;xNew++){
-                const u = W<=1?0.5:xNew/(W-1);
-                const xSrcIdx = inverseCDF(u,cdfX);
-                const xSrc = xSrcIdx;
-                const col = sample(originalImageData,xSrc,ySrc);
-                const outIdx=(yNew*W+xNew)*4;
-                output.data[outIdx]=col[0];
-                output.data[outIdx+1]=col[1];
-                output.data[outIdx+2]=col[2];
-                output.data[outIdx+3]=col[3];
-            }
-        }
-        resolve(output);
-    });
-}
-
 function jetColorMap(v){
     v=Math.min(1,Math.max(0,v));
     const fourV = 4*v;
@@ -484,14 +382,14 @@ function warpFromProbSync(originalImageData, probArray){
     // The probArray is already normalized and transformed at this point.
     // We can use it directly as the PDF.
     const pdf = probArray;
-
+     
     const pmfX=new Float32Array(W).fill(0), pmfY=new Float32Array(H).fill(0);
     for(let j=0;j<H;j++){
         for(let i=0;i<W;i++){
             const p=pdf[j*W+i]; pmfX[i]+=p; pmfY[j]+=p;
         }
     }
-
+    
     const cdfX=new Float32Array(W), cdfY=new Float32Array(H);
     cdfX[0]=pmfX[0]; for(let i=1;i<W;i++) cdfX[i]=cdfX[i-1]+pmfX[i];
     cdfY[0]=pmfY[0]; for(let j=1;j<H;j++) cdfY[j]=cdfY[j-1]+pmfY[j];
